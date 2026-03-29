@@ -1,0 +1,29 @@
+[project]
+name = "sman"
+version = "0.1.0"
+description = "AI-powered sysadmin agent for Fedora/RHEL systems"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40.0",
+    "typer>=0.15.0",
+    "rich>=13.0.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "websockets>=14.0",
+    "aiofiles>=24.0",
+    "httpx>=0.28.0",
+    "jinja2>=3.1.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+sman = "sman.cli.main:app"
+smand = "sman.daemon.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sman"]

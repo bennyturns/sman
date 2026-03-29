@@ -1,0 +1,16 @@
+[Unit]
+Description=sman - AI Sysadmin Agent Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/smand
+Restart=on-failure
+RestartSec=5
+Environment=SMAN_CONFIG=/etc/sman/sman.toml
+RuntimeDirectory=sman
+StateDirectory=sman
+
+[Install]
+WantedBy=multi-user.target

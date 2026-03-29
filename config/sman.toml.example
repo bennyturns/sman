@@ -1,0 +1,43 @@
+[llm]
+provider = "anthropic"
+model = "claude-sonnet-4-20250514"
+api_key_env = "ANTHROPIC_API_KEY"    # reads from this env var
+
+# Local model (vLLM) - uncomment to enable intelligent routing
+# local_provider = "vllm"
+# local_model = "meta-llama/Llama-3.1-8B-Instruct"
+# local_base_url = "http://localhost:8000/v1"
+# auto_route = true                  # auto-route simple vs complex requests
+
+[safety]
+auto_approve_safe = true             # auto-run read-only commands
+require_approval = true              # prompt for write commands
+blocked_patterns = [
+    "rm -rf /",
+    "mkfs",
+    "dd if=",
+    "> /dev/sd",
+    "chmod -R 777 /",
+]
+
+[monitors]
+enabled = true
+watched_services = ["sshd", "nginx", "postgresql"]
+disk_warn_percent = 80
+disk_critical_percent = 90
+ssh_brute_force_threshold = 10
+ssh_brute_force_window = 300         # seconds
+
+[alerts]
+ntfy_enabled = true
+ntfy_topic = "sman-alerts"
+ntfy_server = "https://ntfy.sh"
+# email_enabled = false
+# email_to = "you@example.com"
+# smtp_server = "smtp.gmail.com"
+cooldown_seconds = 300
+
+[daemon]
+host = "127.0.0.1"
+port = 9876
+enable_web = true
