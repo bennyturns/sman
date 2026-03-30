@@ -1,0 +1,14 @@
+{
+    "version": 0,
+    "requires": {
+        "cockpit": "300"
+    },
+    "menu": {
+        "sman": {
+            "label": "AI Sysadmin",
+            "order": 15,
+            "path": "index.html"
+        }
+    },
+    "content-security-policy": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src 'self' ws: wss: http://127.0.0.1:9876 http://localhost:9876; img-src 'self' data:; font-src 'self' data:"
+}
