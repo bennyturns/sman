@@ -1,0 +1,130 @@
+<!-- Summary cards -->
+<div class="cards">
+    <div class="card">
+        <h3>SSH Attacks (1h)</h3>
+        <div class="value" style="color: {{ 'var(--red)' if ssh.total_failures > 50 else 'var(--yellow)' if ssh.total_failures > 10 else 'var(--green)' }}">
+            {{ ssh.total_failures }}
+        </div>
+        <div class="subtitle">from {{ ssh.unique_ips }} unique IPs</div>
+    </div>
+    <div class="card">
+        <h3>Services</h3>
+        <div class="value" style="color: {{ 'var(--red)' if failed_count > 0 else 'var(--green)' }}">
+            {{ active_count }}/{{ total_services }}
+        </div>
+        <div class="subtitle">{{ 'all healthy' if failed_count == 0 else failed_count|string + ' failed' }}</div>
+    </div>
+    <div class="card">
+        <h3>Disk Usage</h3>
+        {% set max_disk = disks|map(attribute='use_percent')|max if disks else 0 %}
+        <div class="value" style="color: {{ 'var(--red)' if max_disk >= 90 else 'var(--yellow)' if max_disk >= 80 else 'var(--green)' }}">
+            {{ max_disk }}%
+        </div>
+        <div class="subtitle">highest mount point</div>
+    </div>
+    <div class="card">
+        <h3>System</h3>
+        <div class="value" style="font-size: 18px;">{{ hostname }}</div>
+        <div class="subtitle">{{ os_name }} | up {{ uptime }}</div>
+    </div>
+</div>
+
+<!-- Service health -->
+<div class="card" style="margin-bottom: 16px;">
+    <h3>Services</h3>
+    <div class="service-grid">
+        {% for svc in services %}
+        <div class="service-item" onclick="document.getElementById('chat-input').value='show me everything about {{ svc.unit.replace('.service', '') }}'; document.getElementById('chat-form').dispatchEvent(new Event('submit'));">
+            <div class="service-dot {{ 'green' if svc.active_state == 'active' else 'red' if svc.active_state == 'failed' else 'yellow' }}"></div>
+            <div>
+                <div class="service-name">{{ svc.unit.replace('.service', '') }}</div>
+                <div class="service-detail">{{ svc.memory_mb + ' MB' if svc.memory_mb else '' }} {{ '| ' + svc.restarts|string + ' restarts' if svc.restarts > 0 else '' }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    <div style="margin-top: 8px; font-size: 11px; color: var(--text-dim);">
+        Tip: <code style="color: var(--blue);">systemctl list-units --state=running</code> to see all running services
+    </div>
+</div>
+
+<!-- SSH attacks table -->
+{% if ssh.top_offenders %}
+<div class="card" style="margin-bottom: 16px;">
+    <h3>Top SSH Attackers (1h)</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>IP Address</th>
+                <th>Attempts</th>
+                <th>Targeted Users</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for o in ssh.top_offenders[:10] %}
+            <tr>
+                <td style="font-family: var(--font-mono); color: var(--red);">{{ o.ip }}</td>
+                <td>{{ o.count }}</td>
+                <td style="color: var(--text-dim);">{{ o.usernames[:5]|join(', ') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div style="margin-top: 8px; font-size: 11px; color: var(--text-dim);">
+        Tip: <code style="color: var(--blue);">journalctl -u sshd --since "1h ago" | grep "Failed password"</code> to see raw log entries
+    </div>
+</div>
+{% endif %}
+
+<!-- Disk space -->
+<div class="card" style="margin-bottom: 16px;">
+    <h3>Disk Space</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Mount</th>
+                <th>Device</th>
+                <th>Size</th>
+                <th>Used</th>
+                <th>Available</th>
+                <th>Use %</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in disks %}
+            <tr>
+                <td>{{ d.mount }}</td>
+                <td style="color: var(--text-dim); font-size: 12px;">{{ d.device }}</td>
+                <td>{{ d.size }}</td>
+                <td>{{ d.used }}</td>
+                <td>{{ d.avail }}</td>
+                <td>
+                    <span class="badge {{ 'critical' if d.use_percent >= 90 else 'warning' if d.use_percent >= 80 else 'active' }}">
+                        {{ d.use_percent }}%
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    <div style="margin-top: 8px; font-size: 11px; color: var(--text-dim);">
+        Tip: <code style="color: var(--blue);">df -h</code> to check disk space, <code style="color: var(--blue);">du -sh /* | sort -rh | head -10</code> to find large directories
+    </div>
+</div>
+
+<!-- Recent alerts -->
+{% if alerts %}
+<div class="card">
+    <h3>Recent Alerts</h3>
+    {% for a in alerts[-5:]|reverse %}
+    <div class="alert-item">
+        <div class="alert-time">{{ a.timestamp[11:16] }}</div>
+        <span class="badge {{ a.severity }}">{{ a.severity|upper }}</span>
+        <div class="alert-body">
+            <div class="alert-title">{{ a.title }}</div>
+            <div class="alert-message">{{ a.message[:120] }}</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}

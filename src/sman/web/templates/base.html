@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>sman — AI Sysadmin Agent</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://unpkg.com/htmx-ext-ws@2.0.0/ws.js"></script>
+</head>
+<body>
+    <div class="app">
+        <header class="header">
+            <div class="logo">sman<span>AI Sysadmin Agent</span></div>
+            <nav>
+                <a href="/" class="{{ 'active' if page == 'dashboard' else '' }}">Dashboard</a>
+                <a href="/alerts" class="{{ 'active' if page == 'alerts' else '' }}">Alerts</a>
+            </nav>
+            <div class="status-indicator">
+                <div class="status-dot"></div>
+                Monitoring active
+            </div>
+        </header>
+
+        <main class="main">
+            {% block content %}{% endblock %}
+        </main>
+
+        <aside class="chat-panel">
+            <div class="chat-header">
+                Chat with sman
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="chat-msg assistant">
+                    Hey! I'm sman, your AI sysadmin. Ask me anything about this system — I'll show you the commands behind every action so you can learn along the way.
+                </div>
+            </div>
+            <div class="chat-input-area">
+                <form id="chat-form" onsubmit="sendMessage(event)">
+                    <input type="text" id="chat-input" placeholder="e.g. &quot;show me failed SSH attempts&quot;" autocomplete="off">
+                    <button type="submit">Send</button>
+                </form>
+            </div>
+        </aside>
+    </div>
+
+    <script>
+        let ws = null;
+
+        function connectWS() {
+            ws = new WebSocket(`ws://${location.host}/ws/chat`);
+            let currentMsg = null;
+
+            ws.onopen = () => console.log('sman chat connected');
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'chunk') {
+                    if (!currentMsg) {
+                        currentMsg = addMessage('assistant', '');
+                    }
+                    // Check if chunk contains a command execution tag
+                    const content = data.content;
+                    if (content.includes('[executed:') || content.includes('[denied:')) {
+                        const cmdMatch = content.match(/\[(executed|denied): (.+?)\]/);
+                        if (cmdMatch) {
+                            const cmdEl = document.createElement('div');
+                            cmdEl.className = 'cmd-tag';
+                            cmdEl.textContent = (cmdMatch[1] === 'executed' ? '$ ' : 'DENIED: ') + cmdMatch[2];
+                            currentMsg.appendChild(cmdEl);
+                        }
+                    } else {
+                        // Regular text — append to message
+                        const textNode = document.createTextNode(content);
+                        currentMsg.appendChild(textNode);
+                    }
+                    scrollChat();
+                } else if (data.type === 'done') {
+                    // Format any code blocks in the final message
+                    if (currentMsg) {
+                        formatMessage(currentMsg);
+                    }
+                    currentMsg = null;
+                } else if (data.type === 'error') {
+                    addMessage('assistant', 'Error: ' + data.content);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('sman chat disconnected, reconnecting...');
+                setTimeout(connectWS, 2000);
+            };
+        }
+
+        function sendMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (!message || !ws) return;
+
+            addMessage('user', message);
+            ws.send(JSON.stringify({ message }));
+            input.value = '';
+        }
+
+        function addMessage(role, text) {
+            const container = document.getElementById('chat-messages');
+            const msg = document.createElement('div');
+            msg.className = `chat-msg ${role}`;
+            if (text) msg.textContent = text;
+            container.appendChild(msg);
+            scrollChat();
+            return msg;
+        }
+
+        function formatMessage(el) {
+            // Simple markdown-like formatting for code blocks
+            let html = el.innerHTML;
+            // Code blocks
+            html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+            // Inline code
+            html = html.replace(/`([^`]+)`/g, '<code class="cmd-tag">$1</code>');
+            // Bold
+            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            if (html !== el.innerHTML) {
+                el.innerHTML = html;
+            }
+        }
+
+        function scrollChat() {
+            const container = document.getElementById('chat-messages');
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // Auto-refresh dashboard every 30s
+        function setupAutoRefresh() {
+            const dashboard = document.getElementById('dashboard-content');
+            if (dashboard) {
+                setInterval(() => {
+                    htmx.trigger(dashboard, 'refresh');
+                }, 30000);
+            }
+        }
+
+        // Init
+        connectWS();
+        setupAutoRefresh();
+    </script>
+</body>
+</html>

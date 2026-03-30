@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div id="dashboard-content"
+     hx-get="/api/dashboard"
+     hx-trigger="load, refresh"
+     hx-swap="innerHTML">
+    <div style="padding: 40px; text-align: center; color: var(--text-dim);">
+        <div class="spinner"></div>
+        Loading dashboard...
+    </div>
+</div>
+{% endblock %}

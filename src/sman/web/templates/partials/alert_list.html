@@ -1,0 +1,21 @@
+{% if alerts %}
+{% for a in alerts|reverse %}
+<div class="alert-item">
+    <div class="alert-time">{{ a.timestamp[5:16] }}</div>
+    <span class="badge {{ a.severity }}">{{ a.severity|upper }}</span>
+    <div class="alert-body">
+        <div class="alert-title">{{ a.title }}</div>
+        <div class="alert-message">{{ a.message }}</div>
+        {% if a.recommendation %}
+        <div style="margin-top: 4px; font-size: 11px; color: var(--blue);">
+            Recommended: <code>{{ a.recommendation }}</code>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% else %}
+<div style="padding: 40px; text-align: center; color: var(--text-dim);">
+    No alerts yet. sman is watching...
+</div>
+{% endif %}

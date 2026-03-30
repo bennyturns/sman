@@ -11,6 +11,7 @@ from pathlib import Path
 import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from sman.config import load_config, SmanConfig
@@ -28,30 +29,21 @@ class AskResponse(BaseModel):
     route: str | None = None
 
 
-# Global state
-_config: SmanConfig | None = None
-_agent: SmanAgent | None = None
-_monitors: MonitorManager | None = None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
-    global _config, _agent, _monitors
-
     config_path = os.environ.get("SMAN_CONFIG")
-    _config = load_config(Path(config_path) if config_path else None)
-    _agent = SmanAgent(_config)
-    _monitors = MonitorManager(_config)
+    config = load_config(Path(config_path) if config_path else None)
 
-    await _monitors.start()
+    app.state.config = config
+    app.state.agent = SmanAgent(config)
+    app.state.monitors = MonitorManager(config)
+
+    await app.state.monitors.start()
 
     yield
 
-    await _monitors.stop()
-    _agent = None
-    _config = None
-    _monitors = None
+    await app.state.monitors.stop()
 
 
 app = FastAPI(
@@ -61,20 +53,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Mount static files
+static_dir = Path(__file__).parent.parent / "web" / "static"
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Mount web UI routes
+from sman.web.app import router as web_router
+app.include_router(web_router)
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
 
-@app.get("/status")
+@app.get("/api/status")
 async def status():
     """System status overview."""
-    if not _agent:
-        return JSONResponse(status_code=503, content={"error": "Agent not initialized"})
-
-    result = await _agent.diagnostics.system_overview()
-    failed = await _agent.diagnostics.failed_services()
+    agent = app.state.agent
+    result = await agent.diagnostics.system_overview()
+    failed = await agent.diagnostics.failed_services()
 
     return {
         "system": result.stdout,
@@ -82,50 +80,27 @@ async def status():
     }
 
 
-@app.get("/monitors")
+@app.get("/api/monitors")
 async def monitors():
     """Run all monitor checks and return results."""
-    if not _monitors:
-        return JSONResponse(status_code=503, content={"error": "Monitors not initialized"})
-
-    results = await _monitors.run_all_checks()
+    results = await app.state.monitors.run_all_checks()
     return results
 
 
-@app.get("/alerts")
-async def alerts(count: int = 20):
-    """Get recent alerts."""
-    if not _monitors:
-        return JSONResponse(status_code=503, content={"error": "Monitors not initialized"})
-
-    return _monitors.dispatcher.get_recent_alerts(count=count)
-
-
-@app.post("/ask", response_model=AskResponse)
+@app.post("/api/ask", response_model=AskResponse)
 async def ask(request: AskRequest):
     """One-shot request to the agent."""
-    if not _agent:
-        return JSONResponse(status_code=503, content={"error": "Agent not initialized"})
-
-    # Create a fresh agent for one-shot requests (no shared history)
-    agent = SmanAgent(_config)
+    agent = SmanAgent(app.state.config)
     response = await agent.ask_oneshot(request.message, force_route=request.force_route)
-
     return AskResponse(response=response)
 
 
-@app.websocket("/chat")
+@app.websocket("/api/chat")
 async def chat(websocket: WebSocket):
     """WebSocket chat session with the agent."""
     await websocket.accept()
 
-    if not _config:
-        await websocket.send_json({"error": "Agent not initialized"})
-        await websocket.close()
-        return
-
-    # Each websocket connection gets its own agent with conversation history
-    agent = SmanAgent(_config)
+    agent = SmanAgent(app.state.config)
 
     try:
         while True:
@@ -136,7 +111,6 @@ async def chat(websocket: WebSocket):
             if not user_input:
                 continue
 
-            # Stream response chunks
             async for chunk in agent.ask(user_input, force_route=msg.get("force_route")):
                 await websocket.send_json({"type": "chunk", "content": chunk})
 
