@@ -42,12 +42,12 @@ def _get_system_info() -> dict:
 
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {"request": request, "page": "dashboard"})
+    return templates.TemplateResponse(name="dashboard.html", context={"request": request, "page": "dashboard"})
 
 
 @router.get("/alerts", response_class=HTMLResponse)
 async def alerts_page(request: Request):
-    return templates.TemplateResponse("alerts.html", {"request": request, "page": "alerts"})
+    return templates.TemplateResponse(name="alerts.html", context={"request": request, "page": "alerts"})
 
 
 @router.get("/api/dashboard", response_class=HTMLResponse)
@@ -67,7 +67,7 @@ async def dashboard_data(request: Request):
     failed_count = sum(1 for s in services if s.get("active_state") == "failed")
     sys_info = _get_system_info()
 
-    return templates.TemplateResponse("partials/dashboard_content.html", {
+    return templates.TemplateResponse(name="partials/dashboard_content.html", context={
         "request": request,
         "ssh": ssh,
         "disks": disks,
@@ -88,7 +88,7 @@ async def alerts_data(request: Request):
     monitors: MonitorManager = request.app.state.monitors
     alerts = monitors.dispatcher.get_recent_alerts(count=50)
 
-    return templates.TemplateResponse("partials/alert_list.html", {
+    return templates.TemplateResponse(name="partials/alert_list.html", context={
         "request": request,
         "alerts": alerts,
     })
