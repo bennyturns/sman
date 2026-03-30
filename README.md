@@ -15,11 +15,14 @@ sman (short for "shadow man") is your AI sysadmin partner. It lets you manage, c
 - **Audit trail** — Every command logged for review and rollback
 - **Daemon mode** — `smand` runs as a systemd service with REST + WebSocket API
 
+- **Proactive monitoring** — SSH brute force detection, disk health, service crash loops, OOM kills, journal anomalies
+- **Alerting** — Push notifications via ntfy, email with severity levels and deduplication
+- **Cockpit plugin** — Integrates into the Cockpit system console with dashboard + AI chat
+- **Web UI** — Standalone HTMX dashboard with real-time updates
+- **Teaching mode** — Every action shows the underlying command so you learn while you manage
+
 ### Planned
 
-- Proactive monitoring — Watch logs, detect SSH brute force, failing disks, service crashes
-- Alerting — Push notifications via ntfy, email
-- Web UI — Browser-based dashboard with chat + terminal
 - Local model support — Run with vLLM for offline/air-gapped use
 
 ## Quick Start
@@ -68,6 +71,28 @@ uv run sman ask --local "restart nginx"
 uv run sman ask --cloud "configure postfix as a gmail relay"
 ```
 
+### Monitor
+
+```bash
+# One-shot monitoring report
+uv run sman monitor
+
+# Run the daemon (starts background monitoring + alerting)
+uv run smand
+```
+
+### Cockpit Plugin
+
+```bash
+# Install the plugin (per-user)
+cp -r cockpit-sman ~/.local/share/cockpit/sman
+
+# Or system-wide
+sudo cp -r cockpit-sman /usr/share/cockpit/sman
+
+# Requires smand running on localhost:9876
+```
+
 ### Daemon
 
 ```bash
@@ -82,19 +107,24 @@ sudo systemctl enable --now smand
 ## Architecture
 
 ```
-                    +------------------+
-                    |   Claude API     |
-                    |   (or vLLM)      |
-                    +--------+---------+
-                             |
-+--------+    HTTP/WS   +----+----------+    subprocess
-| Web UI | <----------> |    smand      | <------------> system commands
-+--------+              | (FastAPI)     |
-                        |               |
-+--------+   HTTP       | - Agent       |
-| sman   | <----------> | - Tool Runner |
-| (CLI)  |              | - Router      |
-+--------+              +---------------+
+                         +------------------+
+                         |   Claude API     |
+                         |   (or vLLM)      |
+                         +--------+---------+
+                                  |
++-----------+   HTTP/WS   +------+----------+   subprocess
+| Cockpit   | <---------> |     smand       | <-----------> system commands
+| Plugin    |             |   (FastAPI)     |
++-----------+             |                 |     journalctl
+                          | - Agent         | <-----------> system logs
++-----------+   HTTP/WS   | - Tool Runner   |
+| Web UI    | <---------> | - Router        |     ntfy/email
+| (HTMX)   |             | - Monitors      | ------------> alerts
++-----------+             |   - SSH         |
+                          |   - Disk/SMART  |
++-----------+   HTTP      |   - Services    |
+| sman CLI  | <---------> |   - Journal     |
++-----------+             +-----------------+
 ```
 
 ### Tool Modules
@@ -109,6 +139,15 @@ sudo systemctl enable --now smand
 | `users` | Create, delete, lock, groups, SSH keys, logins |
 | `diagnostics` | CPU, memory, disk, SMART, SELinux, sensors, certs |
 | `run_command` | Arbitrary shell commands with safety classification |
+
+### Monitor Modules
+
+| Module | What it watches |
+|--------|----------------|
+| `ssh` | Real-time brute force detection via journal stream, per-IP tracking |
+| `disk` | Disk usage thresholds (80/90/95%), SMART health, NVMe endurance |
+| `services` | State transitions, crash loop detection, system-wide failed units |
+| `journal` | OOM kills, sudo failures, disk I/O errors, segfaults, kernel panics |
 
 ### Safety Model
 
@@ -143,6 +182,12 @@ require_approval = true
 
 [monitors]
 watched_services = ["sshd", "nginx", "postgresql"]
+disk_warning = 80
+disk_critical = 90
+
+[alerts]
+ntfy_enabled = true
+ntfy_topic = "your-topic-name"
 ```
 
 ## License
