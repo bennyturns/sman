@@ -143,6 +143,99 @@ def status(
 
 
 @app.command()
+def monitor(
+    config_path: str = typer.Option(None, "--config", "-C", help="Config file path"),
+):
+    """Run all health checks and show results."""
+    from pathlib import Path
+    from rich.table import Table
+
+    cfg = load_config(Path(config_path) if config_path else None)
+
+    async def _run():
+        from sman.monitor.manager import MonitorManager
+        mgr = MonitorManager(cfg)
+        results = await mgr.run_all_checks()
+
+        # SSH summary
+        ssh = results.get("ssh_recent", {})
+        if ssh:
+            ssh_table = Table(title=f"SSH Activity (last {ssh.get('period_hours', 1)}h)")
+            ssh_table.add_column("IP", style="red")
+            ssh_table.add_column("Attempts", justify="right")
+            ssh_table.add_column("Usernames")
+            for offender in ssh.get("top_offenders", [])[:10]:
+                ssh_table.add_row(
+                    offender["ip"],
+                    str(offender["count"]),
+                    ", ".join(offender["usernames"][:5]),
+                )
+            console.print(ssh_table)
+            console.print(f"Total: [red]{ssh['total_failures']}[/red] failures from [yellow]{ssh['unique_ips']}[/yellow] IPs | [green]{ssh['total_accepted']}[/green] accepted")
+            console.print()
+
+        # Disk space
+        disks = results.get("disk_space", [])
+        if disks:
+            disk_table = Table(title="Disk Space")
+            disk_table.add_column("Mount")
+            disk_table.add_column("Size")
+            disk_table.add_column("Used")
+            disk_table.add_column("Avail")
+            disk_table.add_column("Use%", justify="right")
+            for d in disks:
+                pct = d["use_percent"]
+                style = "red" if pct >= 90 else "yellow" if pct >= 80 else "green"
+                disk_table.add_row(
+                    d["mount"], d["size"], d["used"], d["avail"],
+                    f"[{style}]{pct}%[/{style}]",
+                )
+            console.print(disk_table)
+            console.print()
+
+        # SMART
+        smart = results.get("disk_smart", [])
+        if smart:
+            for drive in smart:
+                health_style = "green" if drive["health"] == "PASSED" else "red"
+                issues = ", ".join(drive["issues"]) if drive["issues"] else "None"
+                temp = f"{drive['temperature']}C" if drive["temperature"] else "N/A"
+                console.print(f"SMART {drive['device']}: [{health_style}]{drive['health']}[/{health_style}] | {drive['model']} | Temp: {temp} | Issues: {issues}")
+            console.print()
+
+        # Services
+        services = results.get("services", [])
+        if services:
+            svc_table = Table(title="Watched Services")
+            svc_table.add_column("Service")
+            svc_table.add_column("State")
+            svc_table.add_column("Memory")
+            svc_table.add_column("Restarts", justify="right")
+            for s in services:
+                state = s.get("active_state", "unknown")
+                state_style = "green" if state == "active" else "red" if state == "failed" else "yellow"
+                svc_table.add_row(
+                    s["unit"],
+                    f"[{state_style}]{state}[/{state_style}]",
+                    s.get("memory_mb", "N/A") + (" MB" if s.get("memory_mb") else ""),
+                    str(s.get("restarts", 0)),
+                )
+            console.print(svc_table)
+            console.print()
+
+        # Recent alerts
+        alerts = results.get("alerts", [])
+        if alerts:
+            console.print(Panel(
+                "\n".join(f"[{a['severity'].upper()}] {a['title']}: {a['message'][:100]}" for a in alerts[-5:]),
+                title="Recent Alerts",
+                border_style="red",
+            ))
+
+    run_async(_run())
+
+
+@app.command()
 def version():
     """Show sman version."""
     console.print(f"sman v{__version__}")

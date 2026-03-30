@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from sman.config import load_config, SmanConfig
 from sman.agent.agent import SmanAgent
+from sman.monitor.manager import MonitorManager
 
 
 class AskRequest(BaseModel):
@@ -30,21 +31,27 @@ class AskResponse(BaseModel):
 # Global state
 _config: SmanConfig | None = None
 _agent: SmanAgent | None = None
+_monitors: MonitorManager | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup/shutdown lifecycle."""
-    global _config, _agent
+    global _config, _agent, _monitors
 
     config_path = os.environ.get("SMAN_CONFIG")
     _config = load_config(Path(config_path) if config_path else None)
     _agent = SmanAgent(_config)
+    _monitors = MonitorManager(_config)
+
+    await _monitors.start()
 
     yield
 
+    await _monitors.stop()
     _agent = None
     _config = None
+    _monitors = None
 
 
 app = FastAPI(
@@ -73,6 +80,25 @@ async def status():
         "system": result.stdout,
         "failed_services": failed.stdout if "0 loaded" not in failed.stdout else None,
     }
+
+
+@app.get("/monitors")
+async def monitors():
+    """Run all monitor checks and return results."""
+    if not _monitors:
+        return JSONResponse(status_code=503, content={"error": "Monitors not initialized"})
+
+    results = await _monitors.run_all_checks()
+    return results
+
+
+@app.get("/alerts")
+async def alerts(count: int = 20):
+    """Get recent alerts."""
+    if not _monitors:
+        return JSONResponse(status_code=503, content={"error": "Monitors not initialized"})
+
+    return _monitors.dispatcher.get_recent_alerts(count=count)
 
 
 @app.post("/ask", response_model=AskResponse)
